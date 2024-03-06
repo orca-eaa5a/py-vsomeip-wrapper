@@ -7,16 +7,40 @@
 #include <thread>
 #include <vsomeip/vsomeip.hpp>
 
-std::shared_ptr<vsomeip::application> app;
+// std::shared_ptr<vsomeip::application> app;
+
+/**
+ * app_id : std::shared_ptr<vsomeip::application>
+ **/
+std::map<int, std::shared_ptr<vsomeip::application>> apps;
 
 std::map<int, std::map<int, std::map<int, PyObject *>>> cb_map;
 
+/**
+ * app_id : {
+ *  service_id : std::vector<PyObject *> (callback)
+ * }
+*/
 std::map<int, std::map<int, std::vector<PyObject *>>> availability_handler_vec;
 
-
+/**
+ * service_id : {
+ *  instance_id : {
+ *    method_id : std::shared_ptr<vsomeip::message> (callback)
+ *  }
+ * }
+ * 
+*/
 std::map<int, std::map<int, std::map<int, std::shared_ptr<vsomeip::message>>>> request_map;
 
-std::map<int, std::map<int, std::set<vsomeip::eventgroup_t>>> evtgrp_map;
+/**
+ * app_id : {
+ *  service_id :{
+ *    instance_id : std::set<vsomeip::eventgroup_t>
+ *  }
+ * }
+ **/
+std::map<int, std::map<int, std::map<int, std::set<vsomeip::eventgroup_t>>>> evtgrp_map;
 
 static void debug_write(const std::string msg) {
   std::cout << msg ;
@@ -131,83 +155,6 @@ void message_dispatcher(const std::shared_ptr<vsomeip::message> &_msg) {
   std::cout << "MESSAGE DISPATCHER Finished" << std::endl;
 }
 
-static PyObject *vsomeip_create_application(PyObject *self, PyObject *args) {
-  const char *name;
-  int sts = 0;
-
-  if (!PyArg_ParseTuple(args, "s", &name))
-    return NULL;
-
-  app = vsomeip::runtime::get()->create_application(name);
-  // app->init();
-
-  return Py_BuildValue("i", sts);
-}
-
-static PyObject *vsomeip_init(PyObject *self, PyObject *args){
-  int sts = 0;
-  app->init();
-  return Py_BuildValue("i", sts);
-}
-
-static PyObject *vsomeip_notify(PyObject *self, PyObject *args) {
-
-  int svc_id, inst_id, evt;
-  PyObject *val;
-  int sts = 0;
-
-  if (!PyArg_ParseTuple(args, "iiiO", &svc_id, &inst_id, &evt, &val))
-    PyErr_SetString(PyExc_TypeError, "=Invalid args!");
-
-  //std::shared_ptr<vsomeip::payload> payload;
-  //payload = vsomeip::runtime::get()->create_payload();
-  //std::vector<vsomeip::byte_t> payload_data;
-  //payload_data.push_back(val);
-  //payload->set_data(payload_data);
-
-  std::shared_ptr<vsomeip::payload> payload = payload_unpack(val);
-
-  app->notify(svc_id, inst_id, evt, payload);
-
-  return Py_BuildValue("i", sts);
-}
-
-static PyObject *vsomeip_offer_event(PyObject *self, PyObject *args) {
-  int svc_id, inst_id, evt_id, evgrp_id;
-  int sts = 0;
-
-  if (!PyArg_ParseTuple(args, "iiii", &svc_id, &inst_id, &evt_id, &evgrp_id))
-    PyErr_SetString(PyExc_TypeError, "Invalid args!");
-
-  std::set<vsomeip::eventgroup_t> grp;
-  evtgrp_map[svc_id][inst_id] = grp;
-  grp.insert(evgrp_id);
-
-  app->offer_event(svc_id, inst_id, evt_id, grp);
-
-  return Py_BuildValue("i", sts);
-}
-
-static PyObject *vsomeip_request_event(PyObject *self, PyObject *args) {
-  int svc_id, inst_id, evt_id, evtgrp_id, evt_type, reliability_type_e;
-  int sts = 0;
-
-  // if (!PyArg_ParseTuple(args, "iiii", &svc_id, &inst_id, &evt_id, &grp))
-  //   PyErr_SetString(PyExc_TypeError, "Invalid args!");
-
-  if (!PyArg_ParseTuple(args, "iiii", &svc_id, &inst_id, &evt_id, &evtgrp_id))
-    PyErr_SetString(PyExc_TypeError, "Invalid args!");
-
-  std::set<vsomeip::eventgroup_t> grp;
-  evtgrp_map[svc_id][inst_id] = grp;
-  grp.insert(evtgrp_id);
-
-  app->request_event(svc_id, inst_id, evt_id, grp);
-  app->subscribe(svc_id, inst_id, evtgrp_id);
-
-  return Py_BuildValue("i", sts);
-}
-
 void availability_handler(vsomeip::service_t _service, vsomeip::instance_t _instance, bool _is_available){
   int svc_id = (int)_service;
   int inst_id = (int)_instance;
@@ -237,14 +184,157 @@ void availability_handler(vsomeip::service_t _service, vsomeip::instance_t _inst
   }
 }
 
+static PyObject *vsomeip_create_application(PyObject *self, PyObject *args) {
+  int app_id;
+  const char *name;
+  int sts = 1;
+
+  if (!PyArg_ParseTuple(args, "is", &app_id, &name))
+    return NULL;
+
+  apps[app_id] = vsomeip::runtime::get()->create_application(name);
+
+  return Py_BuildValue("i", app_id);
+}
+
+static PyObject *vsomeip_init(PyObject *self, PyObject *args){
+  int app_id;
+  int sts = 1;
+
+  if (!PyArg_ParseTuple(args, "i", &app_id))
+    return NULL;
+  if(apps.count(app_id) == 0)
+    return NULL
+  std::shared_ptr<vsomeip::application> app = apps[app_id];
+  
+  app->init();
+  app.reset(); // free shared ptr;
+
+  return Py_BuildValue("i", sts);
+}
+
+static void start(int app_id) { 
+  std::shared_ptr<vsomeip::application> app = apps[app_id];
+  app->start(); 
+  app.reset();
+}
+
+static PyObject *vsomeip_start(PyObject *self, PyObject *args) {
+  int app_id;
+  int sts = 1;
+  
+  if (!PyArg_ParseTuple(args, "i", &app_id))
+    PyErr_SetString(PyExc_TypeError, "Invalid args!");
+  if(apps.count(app_id) == 0)
+    return NULL
+
+  std::thread vsomeip_main(&start, app_id);
+
+  vsomeip_main.detach();
+
+  return Py_BuildValue("i", sts);
+}
+
+static PyObject *vsomeip_notify(PyObject *self, PyObject *args) {
+
+  int app_id;
+  int svc_id, inst_id, evt;
+  PyObject *val;
+  int sts = 1;
+
+  if (!PyArg_ParseTuple(args, "iiiiO", &app_id, &svc_id, &inst_id, &evt, &val))
+    PyErr_SetString(PyExc_TypeError, "=Invalid args!");
+  if(apps.count(app_id) == 0)
+    return NULL
+
+  std::shared_ptr<vsomeip::payload> payload = payload_unpack(val);
+  std::shared_ptr<vsomeip::application> app = apps[app_id];
+
+  app->notify(svc_id, inst_id, evt, payload);
+  app.reset(); // free shared ptr;
+
+  return Py_BuildValue("i", sts);
+}
+
+static PyObject *vsomeip_offer_event(PyObject *self, PyObject *args) {
+  int app_id;
+  int svc_id, inst_id, evt_id, evgrp_id;
+  vsomeip::event_type_e event_type;
+  int sts = 1;
+
+  if (!PyArg_ParseTuple(args, "iiiiii", &app_id, &svc_id, &inst_id, &evt_id, &evgrp_id, &event_type))
+    PyErr_SetString(PyExc_TypeError, "Invalid args!");
+  if(apps.count(app_id) == 0)
+    return NULL
+
+  std::set<vsomeip::eventgroup_t> grp;
+  evtgrp_map[app_id][svc_id][inst_id] = grp;
+  grp.insert(evgrp_id);
+
+  std::shared_ptr<vsomeip::application> app = apps[app_id];
+  app->offer_event(svc_id, inst_id, evt_id, grp, event_type);
+  app.reset(); // free shared ptr;
+
+  return Py_BuildValue("i", sts);
+}
+
+static PyObject *vsomeip_request_event(PyObject *self, PyObject *args) {
+  int app_id;
+  int svc_id, inst_id, evt_id, evtgrp_id;
+  vsomeip::event_type_e event_type;
+  vsomeip::reliability_type_e reliability_type;
+  int sts = 1;
+
+  // if (!PyArg_ParseTuple(args, "iiii", &svc_id, &inst_id, &evt_id, &grp))
+  //   PyErr_SetString(PyExc_TypeError, "Invalid args!");
+
+  if (!PyArg_ParseTuple(args, "iiiiiii", &app_id, &svc_id, &inst_id, &evt_id, &evtgrp_id, &event_type, &reliability_type))
+    PyErr_SetString(PyExc_TypeError, "Invalid args!");
+  if(apps.count(app_id) == 0)
+    return NULL
+
+  std::set<vsomeip::eventgroup_t> grp;
+  evtgrp_map[app_id][svc_id][inst_id] = grp;
+  grp.insert(evtgrp_id);
+  
+  std::shared_ptr<vsomeip::application> app = apps[app_id];
+  app->request_event(svc_id, inst_id, evt_id, grp, event_type, reliability_type);
+  app.reset();
+
+  return Py_BuildValue("i", sts);
+}
+
+static PyObject *vsomeip_subscribe(PyObject *self, PyObject *args) {
+  int app_id;
+  int svc_id, inst_id, evtgrp_id;
+  int major, event;
+  int sts = 1;
+
+  if (!PyArg_ParseTuple(args, "iiii", &app_id, &svc_id, &inst_id, &evtgrp_id, &major, &event))
+    PyErr_SetString(PyExc_TypeError, "Invalid args!");
+  if(apps.count(app_id) == 0)
+    return NULL
+
+  std::shared_ptr<vsomeip::application> app = apps[app_id];
+  app->subscribe(svc_id, inst_id, evtgrp_id, major, event);
+  app.reset();
+
+  return Py_BuildValue("i", sts);
+}
+
 static PyObject *vsomeip_offer_service(PyObject *self, PyObject *args) {
+  int app_id;
   int svc_id, inst_id;
   int sts = 0;
 
-  if (!PyArg_ParseTuple(args, "ii", &svc_id, &inst_id))
+  if (!PyArg_ParseTuple(args, "iii", &app_id, &svc_id, &inst_id))
     PyErr_SetString(PyExc_TypeError, "Invalid args!");
+  if(apps.count(app_id) == 0)
+    return NULL
 
+  std::shared_ptr<vsomeip::application> app = apps[app_id];
   app->offer_service(svc_id, inst_id); // major minor version
+  app.reset();
 
   return Py_BuildValue("i", sts);
 }
@@ -252,56 +342,70 @@ static PyObject *vsomeip_offer_service(PyObject *self, PyObject *args) {
 // It is inevitable write callback as C++, not calling python defined function directly, because of the type checking
 // registered function on register_availability_handler must following (void)(int, int, vsomeip_v3::availability_state_handler_t)
 static PyObject *vsomeip_register_availability_handler(PyObject *self, PyObject *args){
+  int app_id;
   int svc_id, inst_id;
-  int sts = 0;
+  int sts = 1;
   PyObject *pycbobj;
 
-  if (!PyArg_ParseTuple(args, "iiO", &svc_id, &inst_id, &pycbobj))
+  if (!PyArg_ParseTuple(args, "iiiO", &app_id, &svc_id, &inst_id, &pycbobj))
     PyErr_SetString(PyExc_TypeError, "Invalid args!");
   if (!PyCallable_Check(pycbobj)) {
     PyErr_SetString(PyExc_TypeError, "Need a callable object!");
   }
+  if(apps.count(app_id) == 0)
+    return NULL
 
   Py_XINCREF(pycbobj);
   availability_handler_vec[svc_id][inst_id].push_back(pycbobj);
+
+  std::shared_ptr<vsomeip::application> app = apps[app_id];
   app->register_availability_handler(svc_id, inst_id, availability_handler);
+  app.reset();
   
   return Py_BuildValue("i", sts);
 }
 
 static PyObject *vsomeip_register_message_handler(PyObject *self, PyObject *args) {
-
+  int app_id;
   int svc_id, inst_id, mtd_id;
-  int sts = 0;
+  int sts = 1;
   PyObject *pycbobj;
 
-  if (!PyArg_ParseTuple(args, "iiiO", &svc_id, &inst_id, &mtd_id, &pycbobj))
+  if (!PyArg_ParseTuple(args, "iiiiO", &app_id, &svc_id, &inst_id, &mtd_id, &pycbobj))
     PyErr_SetString(PyExc_TypeError, "Invalid args!");
-
   // make sure last argument is a function
   if (!PyCallable_Check(pycbobj)) {
     PyErr_SetString(PyExc_TypeError, "Need a callable object!");
   }
+  if(apps.count(app_id) == 0)
+    return NULL
 
   Py_XINCREF(pycbobj);
 
   cb_map[svc_id][inst_id][mtd_id] = pycbobj;
   
-  std::cout << "Cb function registered" << std::endl;
+  // std::cout << "Cb function registered" << std::endl;
 
+  std::shared_ptr<vsomeip::application> app = apps[app_id];
   app->register_message_handler(svc_id, inst_id, mtd_id, message_dispatcher);
+  app.reset();
 
   return Py_BuildValue("i", sts);
 }
 
 static PyObject *vsomeip_request_service(PyObject *self, PyObject *args) {
+  int app_id;
   int svc_id, inst_id;
-  int sts = 0;
+  int sts = 1;
 
-  if (!PyArg_ParseTuple(args, "ii", &svc_id, &inst_id))
+  if (!PyArg_ParseTuple(args, "iii", &app_id, &svc_id, &inst_id))
     PyErr_SetString(PyExc_TypeError, "Invalid args!");
+  if(apps.count(app_id) == 0)
+    return NULL
 
+  std::shared_ptr<vsomeip::application> app = apps[app_id];
   app->request_service(svc_id, inst_id);
+  app.reset();
 
   return Py_BuildValue("i", sts);
 }
@@ -309,10 +413,12 @@ static PyObject *vsomeip_request_service(PyObject *self, PyObject *args) {
 static PyObject *vsomeip_create_request(PyObject *self, PyObject *args){
   int svc_id, inst_id, mtd_id;
   PyObject *val;
-  int sts = 0;
+  int sts = 1;
 
   if (!PyArg_ParseTuple(args, "iii", &svc_id, &inst_id, &mtd_id))
     PyErr_SetString(PyExc_TypeError, "Invalid args!");
+  if(apps.count(app_id) == 0)
+    return NULL
 
   std::shared_ptr<vsomeip::message> rq = vsomeip::runtime::get()->create_request();
   
@@ -320,16 +426,16 @@ static PyObject *vsomeip_create_request(PyObject *self, PyObject *args){
   rq->set_instance(inst_id);
   rq->set_method(mtd_id);
 
-  std::cout << rq.use_count() << std::endl; // debug print
+  // std::cout << rq.use_count() << std::endl; // debug print
 
   request_map[svc_id][inst_id][mtd_id] = rq;
 
-  std::cout << "New Request Created" << std::endl // debug print
-  << typeid(rq).name() << " : " << std::addressof(rq) << std::endl 
-  << "Service ID: " << svc_id << std::endl
-  << "Instance ID: " << inst_id << std::endl
-  << "Method ID: " << mtd_id << std::endl
-  << "------------------------"<< std::endl;
+  // std::cout << "New Request Created" << std::endl // debug print
+  // << typeid(rq).name() << " : " << std::addressof(rq) << std::endl 
+  // << "Service ID: " << svc_id << std::endl
+  // << "Instance ID: " << inst_id << std::endl
+  // << "Method ID: " << mtd_id << std::endl
+  // << "------------------------"<< std::endl;
 
   return Py_BuildValue("L", rq);
 }
@@ -337,11 +443,13 @@ static PyObject *vsomeip_create_request(PyObject *self, PyObject *args){
 static PyObject *vsomeip_setup_request_payload(PyObject *self, PyObject *args){
   int svc_id, inst_id, mtd_id;
   PyObject *payload_bytes;
-  int sts = 0;
+  int sts = 1;
 
   if (!PyArg_ParseTuple(args, "iiiO", &svc_id, &inst_id, &mtd_id, &payload_bytes))
     PyErr_SetString(PyExc_TypeError, "Invalid args!");
-  
+  if(apps.count(app_id) == 0)
+    return NULL
+
   std::shared_ptr< vsomeip::payload > v_payload_obj = vsomeip::runtime::get()->create_payload();
   char *raw_data = PyByteArray_AsString(payload_bytes);
   Py_ssize_t raw_size = PyByteArray_Size(payload_bytes);
@@ -353,24 +461,39 @@ static PyObject *vsomeip_setup_request_payload(PyObject *self, PyObject *args){
 
   std::shared_ptr<vsomeip::message> rq = request_map[svc_id][inst_id][mtd_id];
 
-  std::cout << rq.use_count() << std::endl; // debug print
+  // std::cout << rq.use_count() << std::endl; // debug print
 
   rq->set_payload(v_payload_obj);
 
-  std::cout << "New Request Payload Created" << std::endl // debug print
-  << typeid(rq).name() << " : " << std::addressof(rq) << std::endl 
-  << "Service ID: " << svc_id << std::endl
-  << "Instance ID: " << inst_id << std::endl
-  << "Method ID: " << mtd_id << std::endl
-  << "Payload Size: " << raw_size << std::endl
-  << "------------------------"<< std::endl;
+  // std::cout << "New Request Payload Created" << std::endl // debug print
+  // << typeid(rq).name() << " : " << std::addressof(rq) << std::endl 
+  // << "Service ID: " << svc_id << std::endl
+  // << "Instance ID: " << inst_id << std::endl
+  // << "Method ID: " << mtd_id << std::endl
+  // << "Payload Size: " << raw_size << std::endl
+  // << "------------------------"<< std::endl;
 
   rq.reset(); // free shared_ptr
 
   return Py_BuildValue("L", sts);
 }
 
+static PyObject *vsomeip_send_request(PyObject *self, PyObject *args) {
+  int app_id;
+  int sts = 1;
+  int svc_id, inst_id, mtd_id;
 
+  if (!PyArg_ParseTuple(args, "iiii", &app_id, &svc_id, &inst_id, &mtd_id))
+    PyErr_SetString(PyExc_TypeError, "Invalid args!");
+  if(apps.count(app_id) == 0)
+    return NULL
+    
+  std::shared_ptr<vsomeip::application> app = apps[app_id];
+  app->send(request_map[svc_id][inst_id][mtd_id]);
+  app.reset();
+
+  return Py_BuildValue("i", sts);
+}
 
 // static PyObject *vsomeip_stop_offer_service(PyObject *self, PyObject *args) {
 //   int svc_id, inst_id;
@@ -384,29 +507,6 @@ static PyObject *vsomeip_setup_request_payload(PyObject *self, PyObject *args){
 //   return Py_BuildValue("i", sts);
 // }
 
-static void start() { app->start(); }
-static PyObject *vsomeip_start(PyObject *self, PyObject *args) {
-  int sts = 0;
-
-  std::thread vsomeip_main(&start);
-
-  vsomeip_main.detach();
-
-  return Py_BuildValue("i", sts);
-}
-
-static PyObject *vsomeip_send_request(PyObject *self, PyObject *args) {
-  int sts = 0;
-  int svc_id, inst_id, mtd_id;
-
-  if (!PyArg_ParseTuple(args, "iii", &svc_id, &inst_id, &mtd_id))
-    PyErr_SetString(PyExc_TypeError, "Invalid args!");
-  
-  app->send(request_map[svc_id][inst_id][mtd_id]);
-
-  return Py_BuildValue("i", sts);
-}
-
 static PyMethodDef VsomeIpMethods[] = {
     {"create_application", vsomeip_create_application, METH_VARARGS, "Create a vsomeip application."},
     {"init", vsomeip_init, METH_VARARGS, "init"},
@@ -419,6 +519,7 @@ static PyMethodDef VsomeIpMethods[] = {
     {"offer_event", vsomeip_offer_event, METH_VARARGS, "start offering event."},
     {"notify", vsomeip_notify, METH_VARARGS, "notify."},
     {"request_event", vsomeip_request_event, METH_VARARGS, "start requesting event."},
+    {"subscribe", vsomeip_subscribe, METH_VARARGS, ""},
     // {"test", test_pack_unpack, METH_VARARGS, "notify."},
     {"create_request", vsomeip_create_request, METH_VARARGS, ""},
     {"setup_request_payload", vsomeip_setup_request_payload, METH_VARARGS, ""},
