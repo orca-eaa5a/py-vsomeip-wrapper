@@ -8,6 +8,7 @@
 #include <vsomeip/vsomeip.hpp>
 
 std::shared_ptr<vsomeip::application> app;
+
 std::map<int, std::map<int, std::map<int, PyObject *>>> cb_map;
 
 std::map<int, std::map<int, std::vector<PyObject *>>> availability_handler_vec;
@@ -120,15 +121,13 @@ void message_dispatcher(const std::shared_ptr<vsomeip::message> &_msg) {
       fprintf(stderr, "Not a callable object\n");
   }
 
-
   // if (PyObject_TypeCheck(result, &PyByteArray_Type)) {
-  //   std::shared_ptr<vsomeip::message> its_response =
-  //       vsomeip::runtime::get()->create_response(_msg);
-
+  //   std::shared_ptr<vsomeip::message> its_response = vsomeip::runtime::get()->create_response(_msg);
   //   std::shared_ptr<vsomeip::payload> payload = payload_unpack(result);
   //   its_response->set_payload(payload);
   //   app->send(its_response, true);
   // }
+
   std::cout << "MESSAGE DISPATCHER Finished" << std::endl;
 }
 
@@ -385,32 +384,6 @@ static PyObject *vsomeip_setup_request_payload(PyObject *self, PyObject *args){
 //   return Py_BuildValue("i", sts);
 // }
 
-// static PyObject *vsomeip_send_service(PyObject *self, PyObject *args) {
-//   int svc_id, inst_id, mtd;
-//   PyObject *val;
-//   int sts = 0;
-
-//   if (!PyArg_ParseTuple(args, "iiiO", &svc_id, &inst_id, &mtd, &val))
-//     PyErr_SetString(PyExc_TypeError, "== Invalid args!");
-
-//   std::shared_ptr<vsomeip::message> rq =
-//       vsomeip::runtime::get()->create_request();
-//   // Set the hello world service as target of the request
-//   rq->set_service(svc_id);
-//   rq->set_instance(inst_id);
-//   rq->set_method(mtd);
-
-//   // Create a payload which will be sent to the service
-//   std::shared_ptr<vsomeip::payload> payload = payload_unpack(val);
-
-//   rq->set_payload(payload);
-//   // Send the request to the service. Response will be delivered to the
-//   // registered message handler
-//   app->send(rq, true);
-
-//   return Py_BuildValue("i", sts);
-// }
-
 static void start() { app->start(); }
 static PyObject *vsomeip_start(PyObject *self, PyObject *args) {
   int sts = 0;
@@ -442,7 +415,6 @@ static PyMethodDef VsomeIpMethods[] = {
     {"register_availability_handler", vsomeip_register_availability_handler, METH_VARARGS, "..."},
     {"register_message_handler", vsomeip_register_message_handler, METH_VARARGS, "..."},
     {"request_service", vsomeip_request_service, METH_VARARGS, "request service."},
-    // {"send_service", vsomeip_send_service, METH_VARARGS, "send over service."},
     // {"stop_offer_service", vsomeip_stop_offer_service, METH_VARARGS, "start offering service."},
     {"offer_event", vsomeip_offer_event, METH_VARARGS, "start offering event."},
     {"notify", vsomeip_notify, METH_VARARGS, "notify."},
