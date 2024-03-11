@@ -3,6 +3,11 @@ from enums import *
 from consts import *
 import vsomeip
 
+# TODO
+# - clear_all_handler
+# - release_service
+
+
 class VsomeIP(object):
     def __init__(self) -> None:
         self.app_id = 0
@@ -68,6 +73,9 @@ class VsomeIP(object):
         ret = vsomeip.register_message_handler(app_id, service_id, instance_id, method_id, on_message)
         if not ret:
             raise Exception("register_message_handler failed")
+        pass
+
+    def register_state_handler(self, app_id):
         pass
 
     def request_service(self, app_id:int, service_id:int, instance_id:int):
