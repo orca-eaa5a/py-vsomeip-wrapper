@@ -1,5 +1,5 @@
 # py-vsomeip-wrapper
-### vsomeip wrapper of python, implemented with Python C/C++ extending
+### vsomeip wrapper for python, implemented with Python C/C++ extending
 
 ## Denepdencies
 - [https://github.com/GENIVI/vsomeip](https://github.com/GENIVI/vsomeip)
